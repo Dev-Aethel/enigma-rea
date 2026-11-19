@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ENIGMA-REA // 2-in-1 Auto-Solver & Cryptanalysis VM</title>
+  <style>
+    :root { --bg: #0b0f17; --card: #131a26; --border: #243044; --text: #e2e8f0; --accent: #38bdf8; --ok: #22c55e; }
+    * { box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    body { margin: 0; background: var(--bg); color: var(--text); padding: 20px; }
+    h1 { font-size: 1.2rem; color: var(--accent); margin: 0 0 16px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .card h2 { font-size: 0.95rem; margin: 0 0 12px; color: #94a3b8; text-transform: uppercase; }
+    label { display: block; font-size: 0.78rem; color: #94a3b8; margin: 8px 0 4px; }
+    input, select, textarea { width: 100%; background: #090d14; border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 4px; font-size: 0.85rem; }
+    textarea { min-height: 120px; resize: vertical; }
+    button { margin-top: 10px; background: var(--accent); color: #041019; border: none; padding: 8px 14px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+    button.secondary { background: #1e293b; color: var(--text); border: 1px solid var(--border); }
+    pre { background: #070a10; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 0.8rem; border: 1px solid #1c2536; }
+    .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; background: #1e293b; }
+  </style>
+</head>
+<body>
+  <h1>ENIGMA-REA // 2-in-1 Simulator + KryptScript VM + REA Evidence Loop</h1>
+
+  <div class="grid">
+    <!-- MODULE 1: SIMULATOR -->
+    <div class="card">
+      <h2>Module 1: 2-in-1 Plant Simulator (WASM)</h2>
+      <label>Machine Mode</label>
+      <select id="simMode">
+        <option value="1" selected>M4 (4-Rotor Kriegsmarine)</option>
+        <option value="0">M3 (3-Rotor Heer / Unified Passthrough)</option>
+      </select>
+      <label>Rotors (Comma-separated L->R)</label>
+      <input id="simRotors" value="Beta,II,IV,I" />
+      <label>Reflector (B, C, B-thin, C-thin)</label>
+      <input id="simUkw" value="B-thin" />
+      <label>Rings / Start Positions</label>
+      <div style="display:flex; gap:8px;">
+        <input id="simRings" value="AAAV" placeholder="Rings" />
+        <input id="simStart" value="VJNA" placeholder="Start" />
+      </div>
+      <label>Plugboard Pairs</label>
+      <input id="simPlugs" value="AT BL DF GJ HM NW OP QY RZ VX" />
+      <label>Input Text</label>
+      <textarea id="simInput">NCZW VUSX PNYM HIAX MNUL</textarea>
+      <button id="btnCrypt">Encrypt / Decrypt</button>
+      <button id="btnTest" class="secondary">Run 6 Self-Tests</button>
+      <pre id="simOut">Ready.</pre>
+    </div>
+
+    <!-- MODULE 2: KRYPTSCRIPT SOLVER -->
+    <div class="card">
+      <h2>Module 2: KryptScript Auto-Solver VM</h2>
+      <label>Target Ciphertext (Default: U-534 P1030680 Version B, 72 chars)</label>
+      <textarea id="targetCt" style="min-height:64px;">JCRSAJTGSJEYEXYKKZZSHVUOCTRFRCRPFVYPLKPPLGRHVVBBTBRSXSWXGGTYTVKQNGSCHVGF</textarea>
+      <label>KryptScript Attack Pipeline</label>
+      <textarea id="kryptCode"># Targeted M4 sweep on U-534 P1030680
+MODE M4
+CRIB "WETTER" AT 0..25 WEIGHT 15.0
+STAGE 1: SWEEP GREEK [BETA] ROTORS [I,II,III] UKW [B-THIN] KEEP 16
+STAGE 2: TUNE RINGS KEEP 4
+STAGE 3: CLIMB PLUGS ITER 800</textarea>
+      <button id="btnSolve">Compile & Run VM</button>
+      <span id="bcBadge" class="badge">0 bytes</span>
+      <pre id="solveOut">Awaiting KryptScript execution...</pre>
+    </div>
+
+    <!-- MODULE 3: REA EVIDENCE LOG -->
+    <div class="card">
+      <h2>Module 3: REA Evidence Log & AI Agent</h2>
+      <label>SEEN / INFERRED / UNKNOWN State (JSON)</label>
+      <textarea id="reaLog" style="min-height:185px;">{
+  "target": "P1030680",
+  "SEEN": ["U-534 1 May 1945", "Enigma M4", "Indicator VROL NMKA", "72-char body JCRSA..."],
+  "INFERRED": ["Key Net M-Thetis", "Version A missing S at index 3"],
+  "UNKNOWN": ["Greek wheel Beta/Gamma", "Reflector B-thin/C-thin", "Rotors & Plugboard"]
+}</textarea>
+      <button id="btnAgent">Generate Next Hypothesis</button>
+      <pre id="agentOut">Click to query /api/rea-agent...</pre>
+    </div>
+  </div>
+
+  <script type="module">
+    import { compileKryptScript } from "./krypt_compiler.js";
+
+    const worker = new Worker("./worker.js");
+    let reqId = 0;
+    const pending = new Map();
+
+    worker.onmessage = (e) => {
+      const { id, ok, result, error } = e.data;
+      if (pending.has(id)) {
+        pending.get(id)(ok ? result : { error });
+        pending.delete(id);
+      }
+    };
+
+    function callWorker(type, payload) {
+      return new Promise((resolve) => {
+        const id = ++reqId;
+        pending.set(id, resolve);
+        worker.postMessage({ id, type, payload });
+      });
+    }
+
+    const ROTOR_MAP = { I:0, II:1, III:2, IV:3, V:4, VI:5, VII:6, VIII:7, BETA:8, GAMMA:9 };
+    const UKW_MAP   = { B:0, C:1, "B-THIN":2, "C-THIN":3 };
+
+    document.getElementById("btnTest").onclick = async () => {
+      document.getElementById("simOut").textContent = "Running C/WASM assertions...";
+      const res = await callWorker("RUN_TESTS", {});
+      document.getElementById("simOut").textContent =
+        res.failures === 0 ? "ALL 6 HISTORICAL & 2-IN-1 TESTS PASSED" : JSON.stringify(res);
+    };
+
+    document.getElementById("btnCrypt").onclick = async () => {
+      const mode   = parseInt(document.getElementById("simMode").value, 10);
+      const rotors = document.getElementById("simRotors").value.split(",").map(s => ROTOR_MAP[s.trim().toUpperCase()] ?? 0);
+      const ukw    = UKW_MAP[document.getElementById("simUkw").value.trim().toUpperCase()] ?? 2;
+      const rings  = document.getElementById("simRings").value.trim().toUpperCase();
+      const start  = document.getElementById("simStart").value.trim().toUpperCase();
+      const plugs  = document.getElementById("simPlugs").value.trim().toUpperCase();
+      const text   = document.getElementById("simInput").value;
+
+      const res = await callWorker("CRYPT", { mode, rotors, ukw, start, rings, plugs, text });
+      document.getElementById("simOut").textContent = res.output || JSON.stringify(res);
+    };
+
+    document.getElementById("btnSolve").onclick = async () => {
+      try {
+        const bytecode   = compileKryptScript(document.getElementById("kryptCode").value);
+        const ciphertext = document.getElementById("targetCt").value;
+        document.getElementById("bcBadge").textContent = `${bytecode.length} bytes`;
+        document.getElementById("solveOut").textContent = "Running staged IC -> Rings -> Plugboard hill climber in WASM Worker...";
+        const res = await callWorker("RUN_KRYPTSCRIPT", { bytecode, ciphertext });
+        document.getElementById("solveOut").textContent = JSON.stringify(res, null, 2);
+      } catch (err) {
+        document.getElementById("solveOut").textContent = err.message;
+      }
+    };
+
+    document.getElementById("btnAgent").onclick = async () => {
+      document.getElementById("agentOut").textContent = "Querying REA Agent...";
+      const res = await fetch("/api/rea-agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          evidence: JSON.parse(document.getElementById("reaLog").value),
+          ciphertext: document.getElementById("targetCt").value
+        })
+      });
+      const data = await res.json();
+      document.getElementById("agentOut").textContent = JSON.stringify(data, null, 2);
+      if (data.proposed_kryptscript) {
+        document.getElementById("kryptCode").value = data.proposed_kryptscript;
+      }
+    };
+  </script>
+</body>
+</html>
