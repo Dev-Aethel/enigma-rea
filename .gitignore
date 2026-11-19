@@ -53,3 +53,25 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# --- ENIGMA-REA Additions ---
+
+# Local native CLI binary
+sim_enigma
+
+# Node, Vercel & environment secrets
+node_modules/
+.vercel/
+.env
+.env*.local
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Keep GitHub Actions WASM build artifacts tracked for Vercel
+!public/enigma.js
+!public/enigma.wasm
