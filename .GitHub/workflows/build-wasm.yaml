@@ -1,0 +1,36 @@
+name: Build Enigma WASM
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "Makefile"
+      - ".github/workflows/build-wasm.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.64
+
+      - name: Run Native Unit Tests & Build WASM
+        run: |
+          make test
+          make wasm
+
+      - name: Commit Compiled WASM Artifacts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f public/enigma.js public/enigma.wasm
+          git diff --cached --quiet || git commit -m "chore: compile enigma.wasm [skip ci]"
+          git push
