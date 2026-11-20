@@ -1,12 +1,17 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "outputDirectory": "public",
-  "headers": [
+  "version": 2,
+  "builds": [
+    { "src": "api/**/*.js", "use": "@vercel/node" },
+    { "src": "public/**", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1" },
     {
-      "source": "/(.*)\\.wasm",
-      "headers": [
-        { "key": "Content-Type", "value": "application/wasm" }
-      ]
-    }
+      "src": "/(.*\\.wasm)",
+      "headers": { "Content-Type": "application/wasm" },
+      "dest": "/public/$1"
+    },
+    { "src": "/(.*)", "dest": "/public/$1" }
   ]
 }
